@@ -183,6 +183,8 @@ func resourceCloudflareRecordCreate(ctx context.Context, d *schema.ResourceData,
 	return nil
 }
 
+var cache *DnsRecordCache = NewDnsRecordCache()
+
 func resourceCloudflareRecordRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*cloudflare.API)
 	zoneID := d.Get("zone_id").(string)
@@ -191,10 +193,10 @@ func resourceCloudflareRecordRead(ctx context.Context, d *schema.ResourceData, m
 		return client.DNSRecords(ctx, zoneID, cloudflare.DNSRecord{})
 	}
 
-	record, recordInCache := getDnsRecordFromCache(ctx, zoneID, d.Id(), fetchAllDnsRecordsForZone, dnsRecordCacheForAllZones)
+	record, recordInCache := cache.DNSRecord(ctx, zoneID, d.Id(), fetchAllDnsRecordsForZone)
 
 	if recordInCache == false {
-		tflog.Warn(ctx, fmt.Sprintf("DNS zone %s already cached - but still reading individual record %s from API!", zoneID, d.Id()))
+		tflog.Warn(ctx, fmt.Sprintf("DNS zone %s already cached - but still reading individual record %s from API !", zoneID, d.Id()))
 		var err error
 		record, err = client.DNSRecord(ctx, zoneID, d.Id())
 		if err != nil {
