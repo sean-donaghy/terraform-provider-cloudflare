@@ -183,19 +183,31 @@ func resourceCloudflareRecordCreate(ctx context.Context, d *schema.ResourceData,
 	return nil
 }
 
+var cache *DnsRecordCache = NewDnsRecordCache()
+
 func resourceCloudflareRecordRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	client := meta.(*cloudflare.API)
 	zoneID := d.Get("zone_id").(string)
 
-	record, err := client.DNSRecord(ctx, zoneID, d.Id())
-	if err != nil {
-		var notFoundError *cloudflare.NotFoundError
-		if errors.As(err, &notFoundError) {
-			tflog.Warn(ctx, fmt.Sprintf("Removing record from state because it's not found in API"))
-			d.SetId("")
-			return nil
+	fetchAllDnsRecordsForZone := func(zoneID string) ([]cloudflare.DNSRecord, error) {
+		return client.DNSRecords(ctx, zoneID, cloudflare.DNSRecord{})
+	}
+
+	record, recordInCache := cache.DNSRecord(ctx, zoneID, d.Id(), fetchAllDnsRecordsForZone)
+
+	if recordInCache == false {
+		tflog.Warn(ctx, fmt.Sprintf("DNS zone %s already cached - but still reading individual record %s from API !", zoneID, d.Id()))
+		var err error
+		record, err = client.DNSRecord(ctx, zoneID, d.Id())
+		if err != nil {
+			var notFoundError *cloudflare.NotFoundError
+			if errors.As(err, &notFoundError) {
+				tflog.Warn(ctx, fmt.Sprintf("Removing record from state because it's not found in API"))
+				d.SetId("")
+				return nil
+			}
+			return diag.FromErr(err)
 		}
-		return diag.FromErr(err)
 	}
 
 	data, dataOk := d.GetOk("data")
